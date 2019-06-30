@@ -4,42 +4,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"math/rand"
 	"net/http"
+	"time"
 )
 
 type userModel struct {
-	gorm.Model
-	Username string `json:"username"`
+	ID        uint `gorm:"primary_key"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Username string  `gorm:"unique"`
+	Salt     *string `gorm:"not null"`
+	Password string
 }
 
-func DbSetUp() {
-	db, f := dbCon()
-	defer f(db)
-	db.AutoMigrate(&userModel{})
-}
 
-func dbConBase(dbName string) (*gorm.DB, func(db *gorm.DB)) {
-	db, err := gorm.Open("sqlite3", dbName)
-	if err != nil {
-		panic("failed to connect database")
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const saltRandLen = 10
+
+func generateSalt(u *userModel) string {
+	b := make([]byte, saltRandLen)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
-
-	return db, func(db *gorm.DB) {
-		if err := db.Close(); err != nil {
-			panic("failed to close database")
-		}
-	}
+	return fmt.Sprintf("%s%s", u.Username, string(b))
 }
 
-func dbCon() (*gorm.DB, func(db *gorm.DB)) {
-	return dbConBase("dev.db")
+func (u *userModel) BeforeSave() (err error) {
+	salt := generateSalt(u)
+	u.Salt = &salt
+	return nil
 }
 
 func UsersPopulate(w http.ResponseWriter, r *http.Request) {
-	db, closeF := dbCon()
-	defer closeF(db)
+	db, close := ProdStorage().dbCon()
+	defer close(db)
 
 	var users []userModel
 	db.Find(&users).Delete(userModel{})
@@ -50,12 +50,12 @@ func UsersPopulate(w http.ResponseWriter, r *http.Request) {
 	users = []userModel{}
 	db.Find(&users)
 
-	_, _ = fmt.Fprint(w, "DB populated !\n",)
+	_, _ = fmt.Fprint(w, "DB populated !\n")
 }
 
 func UserCreate(w http.ResponseWriter, r *http.Request) {
-	db, closeF := dbCon()
-	defer closeF(db)
+	db, close := ProdStorage().dbCon()
+	defer close(db)
 
 	var user userModel
 	decoder := json.NewDecoder(r.Body)
@@ -68,9 +68,9 @@ func UserCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserList(w http.ResponseWriter, r *http.Request) {
-	db, closeF := dbCon()
-	defer closeF(db)
-	
+	db, close := ProdStorage().dbCon()
+	defer close(db)
+
 	var users []userModel
 	db.Find(&users)
 
@@ -80,8 +80,8 @@ func UserList(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserGet(w http.ResponseWriter, r *http.Request) {
-	db, closeF := dbCon()
-	defer closeF(db)
+	db, close := ProdStorage().dbCon()
+	defer close(db)
 
 	username := mux.Vars(r)["username"]
 
@@ -99,8 +99,8 @@ func UserGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserUpdate(w http.ResponseWriter, r *http.Request) {
-	db, closeF := dbCon()
-	defer closeF(db)
+	db, close := ProdStorage().dbCon()
+	defer close(db)
 
 	username := mux.Vars(r)["username"]
 
@@ -121,4 +121,3 @@ func UserUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(user)
 }
-
