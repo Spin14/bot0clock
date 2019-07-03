@@ -1,9 +1,9 @@
 package model
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/gorilla/mux"
+	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"math/rand"
 	"net/http"
@@ -37,9 +37,25 @@ func (u *userModel) BeforeSave() (err error) {
 	return nil
 }
 
+type User struct {
+	Username string `json:"username"`
+}
+
+func fromModel(model *userModel) (*User, error) {
+	if model == nil {
+		return nil, errors.New("nil Model")
+	}
+	if model.ID == 0 {
+		return nil, errors.New("no ID Model")
+	}
+
+	return &User{Username:model.Username}, nil
+}
+
+
 func UsersPopulate(w http.ResponseWriter, r *http.Request) {
-	db, close := ProdStorage().dbCon()
-	defer close(db)
+	db, closeDb := ProdStorage().dbCon()
+	defer closeDb(db)
 
 	var users []userModel
 	db.Find(&users).Delete(userModel{})
@@ -53,71 +69,73 @@ func UsersPopulate(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, "DB populated !\n")
 }
 
-func UserCreate(w http.ResponseWriter, r *http.Request) {
-	db, close := ProdStorage().dbCon()
-	defer close(db)
 
-	var user userModel
-	decoder := json.NewDecoder(r.Body)
-	_ = decoder.Decode(&user)
-	db.Create(&user)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(user)
+type Storage struct {
+	c connector
 }
 
-func UserList(w http.ResponseWriter, r *http.Request) {
-	db, close := ProdStorage().dbCon()
-	defer close(db)
-
-	var users []userModel
-	db.Find(&users)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(users)
+func (s Storage) dbCon() (*gorm.DB, func(db *gorm.DB)) {
+	return s.c.GetCon()
 }
 
-func UserGet(w http.ResponseWriter, r *http.Request) {
-	db, close := ProdStorage().dbCon()
-	defer close(db)
 
-	username := mux.Vars(r)["username"]
+func (s *Storage) Count() int {
+	db, tearDown := s.dbCon()
+	defer tearDown(db)
 
-	var user userModel
-	db.Where("username = ?", username).First(&user)
+	var userModels []userModel
+	db.Find(&userModels)
+	return len(userModels)
+}
 
-	if user.ID == 0 {
-		http.NotFound(w, r)
-		return
+func (s *Storage) Create(username string) (*User, error) {
+	db, tearDown := s.dbCon()
+	defer tearDown(db)
+
+	instance := userModel{Username:username}
+	db.Create(&instance)
+	return fromModel(&instance)
+}
+
+func (s *Storage) ListAll() ([]User, error) {
+	db, tearDown := s.dbCon()
+	defer tearDown(db)
+
+	var userModels []userModel
+	db.Find(&userModels)
+
+	var instances = make([]User, len(userModels))
+	for i := range userModels {
+		instance, err := fromModel(&userModels[i])
+		if err != nil {
+			return []User{}, err
+		}
+		instances[i] = *instance
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(userModel{Username: username})
+	return instances, nil
 }
 
-func UserUpdate(w http.ResponseWriter, r *http.Request) {
-	db, close := ProdStorage().dbCon()
-	defer close(db)
 
-	username := mux.Vars(r)["username"]
+func (s *Storage) Retrieve(username string) (*User, error) {
+	db, tearDown := s.dbCon()
+	defer tearDown(db)
 
-	var user userModel
-	db.Where("username = ?", username).First(&user)
+	var instance = userModel{}
+	db.Last(&instance, "Username = ?", username)
+	return fromModel(&instance)
+}
 
-	if user.ID == 0 {
-		http.NotFound(w, r)
-		return
+func (s *Storage) Update(username string, newUsername string) (*User, error) {
+	db, tearDown := s.dbCon()
+	defer tearDown(db)
+
+	var instance = userModel{}
+	db.Last(&instance, "Username = ?", username)
+	if instance.ID == 0 {
+		return nil, errors.New("no ID Model")
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	_ = decoder.Decode(&user)
-
-	db.Model(&user).Update("Username", user.Username)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(user)
+	db.Model(&instance).Update("Username", newUsername)
+	return fromModel(&instance)
 }

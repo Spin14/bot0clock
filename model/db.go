@@ -3,6 +3,10 @@ package model
 import "github.com/jinzhu/gorm"
 
 
+type connector interface {
+	GetCon() (*gorm.DB, func(db *gorm.DB))
+}
+
 func dbConBase(dbName string) (*gorm.DB, func(db *gorm.DB)) {
 	db, err := gorm.Open("sqlite3", dbName)
 	if err != nil {

@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/spin14/bot0clock/api"
 	"github.com/spin14/bot0clock/model"
 	"log"
 	"net/http"
@@ -52,25 +54,38 @@ func authMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	model.MigrateUsersTable()
+	r := api.Router(model.ProdStorage())
 
-	r := mux.NewRouter()
-	r.Use(loggingMiddleware)
-
-	usernamePattern := "{username}[A-Za-z0-9_]+"
-
-	sr := r.PathPrefix("/users").Subrouter()
-	sr.HandleFunc("/", model.UserList).Methods("GET")
-	sr.HandleFunc("/" + usernamePattern, model.UserGet).Methods("GET")
-	sr.HandleFunc("/" + usernamePattern, model.UserUpdate).Methods("PUT")
-	sr.Use(authMiddleware)
-
-	sr.HandleFunc("/", model.UserCreate).Methods("POST")
-
-
-	// Routes consist of a path and a handler function.
 	r.HandleFunc("/users-populate", model.UsersPopulate).Methods("POST")
 
-	// Bind to a port and pass our router in
+	err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, err := route.GetPathTemplate()
+		if err == nil {
+			fmt.Println("ROUTE:", pathTemplate)
+		}
+		pathRegexp, err := route.GetPathRegexp()
+		if err == nil {
+			fmt.Println("Path regexp:", pathRegexp)
+		}
+		queriesTemplates, err := route.GetQueriesTemplates()
+		if err == nil {
+			fmt.Println("Queries templates:", strings.Join(queriesTemplates, ","))
+		}
+		queriesRegexps, err := route.GetQueriesRegexp()
+		if err == nil {
+			fmt.Println("Queries regexps:", strings.Join(queriesRegexps, ","))
+		}
+		methods, err := route.GetMethods()
+		if err == nil {
+			fmt.Println("Methods:", strings.Join(methods, ","))
+		}
+		fmt.Println()
+		return nil
+	})
+
+	if err != nil {
+		fmt.Println(err)
+	}
 	log.Println("Started http server :: port 8000")
 	log.Fatal(http.ListenAndServe(":8000", r))
 }

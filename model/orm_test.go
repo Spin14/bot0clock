@@ -8,8 +8,8 @@ import (
 )
 
 func Test_Orm(t *testing.T) {
-	initUserModelTable()
-	defer cleanUserModelTable()
+	InitUserModelTable()
+	defer CleanUserModelTable()
 
 	s := testStorage()
 	db, tearDownF := s.dbCon()

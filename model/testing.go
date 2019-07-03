@@ -16,15 +16,16 @@ func testStorage() *Storage {
 	return &Storage{c: testConnector{}}
 }
 
-func initUserModelTable() {
+func InitUserModelTable() *Storage {
 	s := testStorage()
 	db, tearDown := s.dbCon()
 	defer tearDown(db)
 	db.AutoMigrate(&userModel{})
 	assertNoUsers(db)
+	return s
 }
 
-func cleanUserModelTable() {
+func CleanUserModelTable() {
 	s := testStorage()
 	db, tearDown := s.dbCon()
 	defer tearDown(db)
